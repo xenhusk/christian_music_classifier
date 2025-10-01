@@ -257,7 +257,7 @@ The training process generates comprehensive visualizations to analyze model per
 - Ensemble takes longest (combines RF + SVM)
 
 ### 6. Feature Importance Analysis
-![Feature Importance](visualizations/feature_importance.png)
+![Feature Importance](visualizations/improved_feature_importance.png)
 
 **Shows**: Top 25 most important audio features for classification
 
