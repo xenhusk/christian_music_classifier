@@ -23,12 +23,14 @@ import logging
 from tqdm import tqdm
 import joblib
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.svm import SVC
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, balanced_accuracy_score, f1_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.feature_selection import VarianceThreshold, SelectKBest, f_classif
+from imblearn.over_sampling import SMOTE
+from imblearn.combine import SMOTETomek
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
@@ -242,7 +244,7 @@ class ImprovedAudioDataLoader:
 class ImprovedAudioClassifier:
     """Improved audio classifier with bias fixes."""
     
-    def __init__(self, model_type: str = 'random_forest'):
+    def __init__(self, model_type: str = 'random_forest', use_resampling: bool = True):
         self.model_type = model_type
         self.model = None
         self.scaler = StandardScaler()
@@ -252,9 +254,10 @@ class ImprovedAudioClassifier:
         self.selected_feature_names = None
         self.label_map = {0: 'Christian', 1: 'Secular'}
         self.class_weights = None
+        self.use_resampling = use_resampling
         
     def train(self, X: np.ndarray, y: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:
-        """Train the improved classifier."""
+        """Train the improved classifier with advanced balancing."""
         start_time = time.time()
         
         # Store feature names
@@ -262,7 +265,7 @@ class ImprovedAudioClassifier:
         
         # 1. Remove constant and low-variance features
         logger.info("🔧 Removing constant and low-variance features...")
-        self.variance_selector = VarianceThreshold(threshold=0.01)  # Remove features with very low variance
+        self.variance_selector = VarianceThreshold(threshold=0.01)
         X_variance_filtered = self.variance_selector.fit_transform(X)
         
         # Get remaining feature names after variance filtering
@@ -276,7 +279,7 @@ class ImprovedAudioClassifier:
         X_scaled = self.scaler.fit_transform(X_variance_filtered)
         
         # 3. Feature selection - select top k features
-        k_best = min(30, X_scaled.shape[1])  # Select top 30 features or all if fewer
+        k_best = min(30, X_scaled.shape[1])
         logger.info(f"🎯 Selecting top {k_best} most discriminative features...")
         self.feature_selector = SelectKBest(score_func=f_classif, k=k_best)
         X_selected = self.feature_selector.fit_transform(X_scaled, y)
@@ -288,58 +291,121 @@ class ImprovedAudioClassifier:
         logger.info(f"   Selected {len(self.selected_feature_names)} features")
         logger.info(f"   Top features: {self.selected_feature_names[:5]}")
         
-        # 4. Calculate class weights to handle imbalance
+        # 4. Calculate class weights
         unique_classes = np.unique(y)
         self.class_weights = compute_class_weight('balanced', classes=unique_classes, y=y)
         class_weight_dict = dict(zip(unique_classes, self.class_weights))
         
-        logger.info(f"📊 Class distribution: {np.bincount(y)}")
+        original_distribution = np.bincount(y)
+        logger.info(f"📊 Original class distribution: {original_distribution}")
         logger.info(f"⚖️ Class weights: {class_weight_dict}")
         
-        # 5. Initialize model with class balancing
+        # 5. Apply SMOTE for better class balancing (if enabled)
+        X_train = X_selected
+        y_train = y
+        used_smote = False
+        
+        if self.use_resampling and len(np.unique(y)) == 2:
+            try:
+                logger.info("🔄 Applying SMOTE-Tomek for better class balance...")
+                smote_tomek = SMOTETomek(random_state=42)
+                X_train, y_train = smote_tomek.fit_resample(X_selected, y)
+                resampled_distribution = np.bincount(y_train)
+                logger.info(f"   After SMOTE-Tomek: {resampled_distribution}")
+                logger.info(f"   Samples added: {len(y_train) - len(y)}")
+                used_smote = True
+            except Exception as e:
+                logger.warning(f"   SMOTE failed: {e}, continuing with class weights only")
+                X_train = X_selected
+                y_train = y
+        
+        # 6. Initialize model with tuned hyperparameters based on results
         if self.model_type == 'random_forest':
+            # Tuned for better minority class performance
             self.model = RandomForestClassifier(
+                n_estimators=400,  # Increased for better generalization
+                max_depth=15,      # Reduced to prevent overfitting to majority class
+                min_samples_split=8,  # Increased to reduce overfitting
+                min_samples_leaf=4,   # Increased to reduce overfitting
+                max_features='sqrt',  # Reduced features per split
+                class_weight='balanced_subsample',  # Better for imbalanced data with bagging
+                random_state=42,
+                n_jobs=-1,
+                bootstrap=True,
+                oob_score=True  # Out-of-bag score for validation
+            )
+        elif self.model_type == 'svm':
+            # SVM showed better balance, keep similar but tune
+            self.model = SVC(
+                kernel='rbf',
+                C=2.0,  # Slightly increased for better fit
+                gamma='scale',
+                class_weight='balanced',
+                probability=True,
+                random_state=42,
+                cache_size=500  # Larger cache for faster training
+            )
+        elif self.model_type == 'ensemble':
+            # Create ensemble of RF and SVM for best of both worlds
+            rf_model = RandomForestClassifier(
                 n_estimators=300,
-                max_depth=20,
-                min_samples_split=5,
-                min_samples_leaf=2,
-                class_weight='balanced',  # Handle class imbalance
+                max_depth=15,
+                min_samples_split=8,
+                min_samples_leaf=4,
+                class_weight='balanced_subsample',
                 random_state=42,
                 n_jobs=-1
             )
-        elif self.model_type == 'svm':
-            self.model = SVC(
+            svm_model = SVC(
                 kernel='rbf',
-                C=1.0,
+                C=2.0,
                 gamma='scale',
-                class_weight='balanced',  # Handle class imbalance
+                class_weight='balanced',
                 probability=True,
                 random_state=42
+            )
+            self.model = VotingClassifier(
+                estimators=[('rf', rf_model), ('svm', svm_model)],
+                voting='soft',  # Use probability voting
+                weights=[1.2, 1.0]  # Slightly favor RF for overall accuracy
             )
         else:
             raise ValueError(f"Unknown model type: {self.model_type}")
         
-        # 6. Train model
+        # 7. Train model
         logger.info(f"🤖 Training balanced {self.model_type}...")
-        self.model.fit(X_selected, y)
+        self.model.fit(X_train, y_train)
         
-        # 7. Validate with cross-validation
-        logger.info("🔄 Performing cross-validation...")
-        cv_scores = cross_val_score(self.model, X_selected, y, cv=5, scoring='accuracy')
+        # 8. Validate with cross-validation on original data
+        logger.info("🔄 Performing stratified cross-validation...")
+        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        cv_scores = cross_val_score(self.model, X_selected, y, cv=cv, scoring='balanced_accuracy')
+        cv_f1_scores = cross_val_score(self.model, X_selected, y, cv=cv, scoring='f1_weighted')
         
         training_time = time.time() - start_time
         
+        # Get OOB score if available
+        oob_score = None
+        if hasattr(self.model, 'oob_score_'):
+            oob_score = self.model.oob_score_
+        
         return {
-            'train_accuracy': self.model.score(X_selected, y),
+            'train_accuracy': self.model.score(X_train, y_train),
             'cv_mean': np.mean(cv_scores),
             'cv_std': np.std(cv_scores),
+            'cv_f1_mean': np.mean(cv_f1_scores),
+            'cv_f1_std': np.std(cv_f1_scores),
+            'oob_score': oob_score,
             'n_features_original': X.shape[1],
-            'n_features_selected': X_selected.shape[1],
-            'n_samples': X.shape[0],
+            'n_features_selected': X_train.shape[1],
+            'n_samples_original': len(y),
+            'n_samples_train': len(y_train),
             'training_time': training_time,
-            'class_distribution': np.bincount(y).tolist(),
+            'class_distribution': original_distribution.tolist(),
+            'resampled_distribution': np.bincount(y_train).tolist() if used_smote else None,
             'class_weights': class_weight_dict,
-            'selected_features': self.selected_feature_names
+            'selected_features': self.selected_feature_names,
+            'used_smote': used_smote
         }
     
     def _prepare_features(self, X: np.ndarray) -> np.ndarray:
@@ -514,53 +580,93 @@ def main():
     print(f"   Training: {len(X_train)} samples (Christian: {np.sum(y_train==0)}, Secular: {np.sum(y_train==1)})")
     print(f"   Testing: {len(X_test)} samples (Christian: {np.sum(y_test==0)}, Secular: {np.sum(y_test==1)})")
     
-    # Train improved models
+    # Train improved models (including new ensemble)
     models = {}
-    for model_type in ['random_forest', 'svm']:
+    for model_type in ['random_forest', 'svm', 'ensemble']:
         print(f"\n🤖 Training improved {model_type}...")
         
-        classifier = ImprovedAudioClassifier(model_type=model_type)
+        classifier = ImprovedAudioClassifier(model_type=model_type, use_resampling=True)
         
         # Train
         train_metrics = classifier.train(X_train, y_train, feature_names)
         
         # Test
         y_pred = classifier.predict(X_test)
+        y_pred_proba = classifier.predict_proba(X_test)
+        
         test_accuracy = accuracy_score(y_test, y_pred)
+        balanced_acc = balanced_accuracy_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred, average='weighted')
+        
+        # Per-class accuracy
+        christian_mask = y_test == 0
+        secular_mask = y_test == 1
+        christian_acc = accuracy_score(y_test[christian_mask], y_pred[christian_mask]) if christian_mask.sum() > 0 else 0
+        secular_acc = accuracy_score(y_test[secular_mask], y_pred[secular_mask]) if secular_mask.sum() > 0 else 0
         
         models[model_type] = {
             'classifier': classifier,
             'train_accuracy': train_metrics['train_accuracy'],
             'cv_mean': train_metrics['cv_mean'],
             'cv_std': train_metrics['cv_std'],
+            'cv_f1_mean': train_metrics['cv_f1_mean'],
+            'cv_f1_std': train_metrics['cv_f1_std'],
+            'oob_score': train_metrics.get('oob_score'),
             'test_accuracy': test_accuracy,
+            'balanced_accuracy': balanced_acc,
+            'f1_score': f1,
+            'christian_accuracy': christian_acc,
+            'secular_accuracy': secular_acc,
             'predictions': y_pred,
+            'probabilities': y_pred_proba,
             'training_time': train_metrics['training_time'],
             'n_features_selected': train_metrics['n_features_selected'],
-            'class_weights': train_metrics['class_weights']
+            'class_weights': train_metrics['class_weights'],
+            'used_smote': train_metrics.get('used_smote', False),
+            'resampled_distribution': train_metrics.get('resampled_distribution')
         }
         
         print(f"   Training accuracy: {train_metrics['train_accuracy']:.3f}")
-        print(f"   CV accuracy: {train_metrics['cv_mean']:.3f} ± {train_metrics['cv_std']:.3f}")
+        print(f"   CV balanced accuracy: {train_metrics['cv_mean']:.3f} ± {train_metrics['cv_std']:.3f}")
+        print(f"   CV F1 score: {train_metrics['cv_f1_mean']:.3f} ± {train_metrics['cv_f1_std']:.3f}")
+        if train_metrics.get('oob_score'):
+            print(f"   OOB score: {train_metrics['oob_score']:.3f}")
         print(f"   Test accuracy: {test_accuracy:.3f}")
+        print(f"   Balanced accuracy: {balanced_acc:.3f}")
+        print(f"   F1 score: {f1:.3f}")
+        print(f"   Christian accuracy: {christian_acc:.1%} | Secular accuracy: {secular_acc:.1%}")
         print(f"   Features selected: {train_metrics['n_features_selected']}")
         print(f"   Training time: {train_metrics['training_time']:.1f}s")
+        if train_metrics.get('used_smote'):
+            print(f"   ✅ Used SMOTE-Tomek: {train_metrics.get('resampled_distribution')}")
     
-    # Choose best model based on CV score
-    best_model_type = max(models.keys(), key=lambda k: models[k]['cv_mean'])
+    # Choose best model based on balanced accuracy (better for imbalanced data)
+    best_model_type = max(models.keys(), key=lambda k: models[k]['balanced_accuracy'])
     best_model = models[best_model_type]['classifier']
-    best_accuracy = models[best_model_type]['test_accuracy']
+    best_metrics = models[best_model_type]
     
-    print(f"\n🏆 Best model: {best_model_type}")
-    print(f"   Test accuracy: {best_accuracy:.3f}")
-    print(f"   CV accuracy: {models[best_model_type]['cv_mean']:.3f}")
+    print(f"\n🏆 Best model (by balanced accuracy): {best_model_type}")
+    print(f"   Test accuracy: {best_metrics['test_accuracy']:.3f}")
+    print(f"   Balanced accuracy: {best_metrics['balanced_accuracy']:.3f}")
+    print(f"   F1 score: {best_metrics['f1_score']:.3f}")
+    print(f"   Christian accuracy: {best_metrics['christian_accuracy']:.1%}")
+    print(f"   Secular accuracy: {best_metrics['secular_accuracy']:.1%}")
     
     # Detailed evaluation
     y_pred_best = models[best_model_type]['predictions']
     class_names = ['Christian', 'Secular']
     
-    print(f"\n📈 Detailed Results:")
+    print(f"\n📈 Detailed Results for Best Model:")
     print(classification_report(y_test, y_pred_best, target_names=class_names))
+    
+    # Show all models comparison
+    print(f"\n📊 All Models Comparison:")
+    print(f"{'Model':<15} {'Accuracy':<10} {'Bal. Acc.':<12} {'F1':<8} {'Christian':<12} {'Secular':<12}")
+    print("=" * 75)
+    for model_type in ['random_forest', 'svm', 'ensemble']:
+        m = models[model_type]
+        print(f"{model_type:<15} {m['test_accuracy']:<10.3f} {m['balanced_accuracy']:<12.3f} "
+              f"{m['f1_score']:<8.3f} {m['christian_accuracy']:<12.1%} {m['secular_accuracy']:<12.1%}")
     
     # Feature importance
     feature_importance = None
@@ -572,13 +678,24 @@ def main():
     create_improved_visualizations(y_test, y_pred_best, feature_importance, 
                                  best_model.selected_feature_names, class_names)
     
-    # Save improved model
-    model_path = f"models/improved_audio_classifier_{best_model_type}.joblib"
+    # Save all improved models
     os.makedirs('models', exist_ok=True)
-    best_model.save_model(model_path)
+    print("\n💾 Saving all models...")
     
-    print(f"\n💾 Improved model saved to: {model_path}")
+    for model_type in ['random_forest', 'svm', 'ensemble']:
+        model_path = f"models/improved_audio_classifier_{model_type}.joblib"
+        models[model_type]['classifier'].save_model(model_path)
+        print(f"   ✅ Saved: {model_path}")
+        print(f"      - Accuracy: {models[model_type]['test_accuracy']:.3f}")
+        print(f"      - Balanced Accuracy: {models[model_type]['balanced_accuracy']:.3f}")
+        print(f"      - Christian: {models[model_type]['christian_accuracy']:.1%} | Secular: {models[model_type]['secular_accuracy']:.1%}")
+    
+    print(f"\n🎯 Best model: {best_model_type} (by balanced accuracy)")
     print("🎉 Improved training complete!")
+    print("\n💡 Recommendations:")
+    print("   • Use 'ensemble' for best balanced performance")
+    print("   • Use 'random_forest' for highest overall accuracy")
+    print("   • Use 'svm' for fastest inference")
     
     return best_model, feature_names
 

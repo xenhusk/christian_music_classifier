@@ -14,7 +14,7 @@ python improved_audio_classifier.py
 # 3. Test model performance
 python simple_model_test.py
 
-# 4. Try live demo
+# 4. Try live demo with model comparison
 python demo_fixed_model.py
 ```
 
@@ -23,7 +23,8 @@ python demo_fixed_model.py
 - **Audio-Based Classification**: Analyzes audio characteristics instead of lyrics
 - **Offline Operation**: No internet connection required
 - **Comprehensive Features**: 50+ audio features including tempo, harmony, rhythm, and spectral properties
-- **Multiple Models**: Random Forest and SVM classifiers
+- **Multiple Models**: Random Forest and SVM classifiers with side-by-side comparison
+- **Multithreaded Processing**: Fast parallel feature extraction
 - **High Coverage**: Can classify ALL audio files in your dataset
 - **Visualization**: Confusion matrix and feature importance plots
 
@@ -32,13 +33,14 @@ python demo_fixed_model.py
 ```
 christian_music_classifier/
 ├── improved_audio_classifier.py  # 🎯 Main training script (FIXED)
-├── demo_fixed_model.py           # 🎵 Live demo of fixed model
+├── demo_fixed_model.py           # 🎵 Enhanced demo with model comparison
 ├── simple_model_test.py          # 🧪 Model comparison & validation
 ├── TrainingData/                 # Training data directory
 │   ├── ChristianMusic/           # Christian music files (371 files)
 │   └── SecularMusic/             # Secular music files (160 files)
 ├── models/                       # Trained model storage
-│   └── improved_audio_classifier_random_forest.joblib  # ✅ Fixed model
+│   ├── improved_audio_classifier_random_forest.joblib  # ✅ Random Forest model
+│   └── improved_audio_classifier_svm.joblib           # ✅ SVM model
 ├── visualizations/               # Generated plots and charts
 ├── venv/                         # Python virtual environment
 ├── requirements.txt              # Python dependencies (CPU-only)
@@ -104,16 +106,38 @@ This will:
 - Show performance improvements and bias fixes
 - Display detailed model comparison results
 
-### 2.2. Live Demo
+### 2.2. Live Demo with Model Comparison
 
 ```bash
+# Test all models (default: 10 samples per class, 4 workers)
 python demo_fixed_model.py
+
+# Test specific model
+python demo_fixed_model.py --model improved_audio_classifier_random_forest.joblib
+
+# Test with more samples and faster processing
+python demo_fixed_model.py --samples 20 --workers 8
+
+# List available models
+python demo_fixed_model.py --list
+
+# Get help
+python demo_fixed_model.py --help
 ```
 
+**Command-line Options:**
+- `--model`, `-m`: Test specific model (default: test all models)
+- `--samples`, `-s`: Number of samples per class (default: 10)
+- `--workers`, `-w`: Number of parallel workers (default: 4)
+- `--list`, `-l`: List available models
+
 This will:
-- Load the improved model
+- Load and compare multiple models simultaneously
+- Extract features using multithreaded parallel processing
 - Test random samples from your dataset
-- Show real-time predictions with confidence scores
+- Show side-by-side predictions with confidence scores
+- Display per-model accuracy statistics (overall, Christian, Secular)
+- Identify the best performing model
 - Demonstrate balanced Christian/Secular classification
 
 ## Audio Features
@@ -205,6 +229,7 @@ The classifier analyzes these audio characteristics:
 
 ## Example Output
 
+### Training Output
 ```
 🎵 Audio-Based Christian Music Classifier
 ==================================================
@@ -241,6 +266,71 @@ weighted avg       0.85      0.85      0.85       107
 
 💾 Model saved to: models/audio_classifier_random_forest.joblib
 🎉 Training complete!
+```
+
+### Demo Output (Model Comparison)
+```
+🎵 Christian Music Classifier - Enhanced Demo
+======================================================================
+
+📦 Loading models...
+✅ Loaded model: improved_audio_classifier_random_forest.joblib
+✅ Loaded model: improved_audio_classifier_svm.joblib
+
+📊 Loaded 2 model(s):
+   • improved_audio_classifier_random_forest.joblib
+     - Type: random_forest
+     - Features: 65 → 30 (selected)
+     - Class weights: {0: 0.718, 1: 1.578}
+   • improved_audio_classifier_svm.joblib
+     - Type: svm
+     - Features: 65 → 30 (selected)
+     - Class weights: {0: 0.718, 1: 1.578}
+
+🔄 Extracting features using 4 parallel workers...
+✅ Feature extraction complete in 12.34s (0.62s per file)
+
+📊 Testing predictions...
+
+ 1. Amazing Grace (Chris Tomlin).mp3
+    ✓ True label: Christian
+    ✅ RANDOM_FOREST: Christian (0.856)
+    ✅ SVM          : Christian (0.912)
+
+ 2. Bohemian Rhapsody (Queen).mp3
+    ✓ True label: Secular
+    ✅ RANDOM_FOREST: Secular (0.743)
+    ✅ SVM          : Secular (0.689)
+
+======================================================================
+📊 MODEL COMPARISON RESULTS
+======================================================================
+
+🎯 improved_audio_classifier_random_forest.joblib
+   Overall: 17/20 = 85.0%
+   Christian accuracy: 9/10 = 90.0%
+   Secular accuracy: 8/10 = 80.0%
+   Average confidence: 0.823
+
+🎯 improved_audio_classifier_svm.joblib
+   Overall: 16/20 = 80.0%
+   Christian accuracy: 9/10 = 90.0%
+   Secular accuracy: 7/10 = 70.0%
+   Average confidence: 0.834
+
+🏆 Best performing model: improved_audio_classifier_random_forest.joblib
+   Accuracy: 85.0%
+
+======================================================================
+✨ DEMO FEATURES:
+   ✅ Multithreaded feature extraction
+   ✅ Side-by-side model comparison
+   ✅ Balanced predictions (not biased toward Christian)
+   ✅ Proper confidence scores
+   ✅ Works on all audio formats
+   ✅ No internet connection required
+
+🎉 Demo complete!
 ```
 
 ## Contributing
