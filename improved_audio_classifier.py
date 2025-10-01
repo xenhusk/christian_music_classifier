@@ -482,11 +482,196 @@ def extract_all_features_improved(audio_files: List[Dict[str, Any]],
     
     return X, y, feature_names
 
+def create_model_comparison_visualizations(models: Dict[str, Dict], y_test: np.ndarray, 
+                                          class_names: List[str] = ['Christian', 'Secular']):
+    """Create comprehensive model comparison visualizations."""
+    
+    os.makedirs('visualizations', exist_ok=True)
+    
+    # Set style
+    plt.style.use('seaborn-v0_8-darkgrid')
+    colors = ['#2ecc71', '#3498db', '#e74c3c']  # Green, Blue, Red
+    
+    model_order = ['random_forest', 'svm', 'ensemble']
+    model_labels = ['Random Forest', 'SVM', 'Ensemble']
+    
+    # 1. Overall Metrics Comparison
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    fig.suptitle('Model Performance Comparison', fontsize=20, fontweight='bold', y=0.995)
+    
+    # Test Accuracy
+    ax1 = axes[0, 0]
+    test_accs = [models[m]['test_accuracy'] * 100 for m in model_order]
+    bars1 = ax1.bar(model_labels, test_accs, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
+    ax1.set_ylabel('Accuracy (%)', fontsize=12, fontweight='bold')
+    ax1.set_title('Test Accuracy', fontsize=14, fontweight='bold')
+    ax1.set_ylim(80, 100)
+    ax1.grid(axis='y', alpha=0.3)
+    for i, (bar, val) in enumerate(zip(bars1, test_accs)):
+        ax1.text(bar.get_x() + bar.get_width()/2, val + 0.5, f'{val:.1f}%', 
+                ha='center', va='bottom', fontweight='bold', fontsize=11)
+    
+    # Balanced Accuracy
+    ax2 = axes[0, 1]
+    bal_accs = [models[m]['balanced_accuracy'] * 100 for m in model_order]
+    bars2 = ax2.bar(model_labels, bal_accs, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
+    ax2.set_ylabel('Balanced Accuracy (%)', fontsize=12, fontweight='bold')
+    ax2.set_title('Balanced Accuracy (Fairer Metric)', fontsize=14, fontweight='bold')
+    ax2.set_ylim(80, 100)
+    ax2.grid(axis='y', alpha=0.3)
+    for i, (bar, val) in enumerate(zip(bars2, bal_accs)):
+        ax2.text(bar.get_x() + bar.get_width()/2, val + 0.5, f'{val:.1f}%', 
+                ha='center', va='bottom', fontweight='bold', fontsize=11)
+    
+    # F1 Score
+    ax3 = axes[1, 0]
+    f1_scores = [models[m]['f1_score'] * 100 for m in model_order]
+    bars3 = ax3.bar(model_labels, f1_scores, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
+    ax3.set_ylabel('F1 Score (%)', fontsize=12, fontweight='bold')
+    ax3.set_title('F1 Score (Precision + Recall)', fontsize=14, fontweight='bold')
+    ax3.set_ylim(80, 100)
+    ax3.grid(axis='y', alpha=0.3)
+    for i, (bar, val) in enumerate(zip(bars3, f1_scores)):
+        ax3.text(bar.get_x() + bar.get_width()/2, val + 0.5, f'{val:.1f}%', 
+                ha='center', va='bottom', fontweight='bold', fontsize=11)
+    
+    # Cross-Validation Accuracy
+    ax4 = axes[1, 1]
+    cv_means = [models[m]['cv_mean'] * 100 for m in model_order]
+    cv_stds = [models[m]['cv_std'] * 100 for m in model_order]
+    bars4 = ax4.bar(model_labels, cv_means, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5,
+                    yerr=cv_stds, capsize=10, error_kw={'linewidth': 2, 'ecolor': 'black'})
+    ax4.set_ylabel('CV Accuracy (%)', fontsize=12, fontweight='bold')
+    ax4.set_title('Cross-Validation Accuracy (±std)', fontsize=14, fontweight='bold')
+    ax4.set_ylim(80, 100)
+    ax4.grid(axis='y', alpha=0.3)
+    for i, (bar, val, std) in enumerate(zip(bars4, cv_means, cv_stds)):
+        ax4.text(bar.get_x() + bar.get_width()/2, val + std + 0.5, f'{val:.1f}±{std:.1f}%', 
+                ha='center', va='bottom', fontweight='bold', fontsize=10)
+    
+    plt.tight_layout()
+    plt.savefig('visualizations/model_comparison_metrics.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info("✅ Saved: model_comparison_metrics.png")
+    
+    # 2. Per-Class Performance Comparison
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    x = np.arange(len(model_labels))
+    width = 0.35
+    
+    christian_accs = [models[m]['christian_accuracy'] * 100 for m in model_order]
+    secular_accs = [models[m]['secular_accuracy'] * 100 for m in model_order]
+    
+    bars1 = ax.bar(x - width/2, christian_accs, width, label='Christian', 
+                   color='#3498db', alpha=0.8, edgecolor='black', linewidth=1.5)
+    bars2 = ax.bar(x + width/2, secular_accs, width, label='Secular', 
+                   color='#e74c3c', alpha=0.8, edgecolor='black', linewidth=1.5)
+    
+    ax.set_ylabel('Accuracy (%)', fontsize=13, fontweight='bold')
+    ax.set_title('Per-Class Performance: Christian vs Secular', fontsize=16, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(model_labels, fontsize=12)
+    ax.legend(fontsize=12, loc='lower right')
+    ax.set_ylim(75, 100)
+    ax.grid(axis='y', alpha=0.3)
+    
+    # Add value labels
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                   f'{height:.1f}%', ha='center', va='bottom', fontweight='bold', fontsize=10)
+    
+    # Add balance gap annotations
+    for i, (c_acc, s_acc) in enumerate(zip(christian_accs, secular_accs)):
+        gap = abs(c_acc - s_acc)
+        ax.text(i, 78, f'Gap: {gap:.1f}%', ha='center', fontsize=9, 
+               bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
+    
+    plt.tight_layout()
+    plt.savefig('visualizations/per_class_comparison.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info("✅ Saved: per_class_comparison.png")
+    
+    # 3. Confusion Matrices Grid (All Models)
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig.suptitle('Confusion Matrices - All Models', fontsize=18, fontweight='bold', y=1.02)
+    
+    for idx, (model_type, label) in enumerate(zip(model_order, model_labels)):
+        ax = axes[idx]
+        y_pred = models[model_type]['predictions']
+        cm = confusion_matrix(y_test, y_pred)
+        cm_percent = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100
+        
+        # Create labels with counts and percentages
+        labels = np.empty_like(cm, dtype=object)
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                labels[i, j] = f'{cm[i, j]}\n({cm_percent[i, j]:.1f}%)'
+        
+        sns.heatmap(cm, annot=labels, fmt='', cmap='Blues', ax=ax,
+                   xticklabels=class_names, yticklabels=class_names,
+                   cbar_kws={'label': 'Count'}, vmin=0, vmax=cm.max())
+        ax.set_title(f'{label}\nAccuracy: {models[model_type]["test_accuracy"]:.1%}', 
+                    fontsize=13, fontweight='bold')
+        ax.set_ylabel('True Label', fontsize=11)
+        ax.set_xlabel('Predicted Label', fontsize=11)
+    
+    plt.tight_layout()
+    plt.savefig('visualizations/confusion_matrices_all.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info("✅ Saved: confusion_matrices_all.png")
+    
+    # 4. Confidence Distribution Comparison
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle('Prediction Confidence Distribution', fontsize=18, fontweight='bold', y=1.02)
+    
+    for idx, (model_type, label) in enumerate(zip(model_order, model_labels)):
+        ax = axes[idx]
+        probas = models[model_type]['probabilities']
+        confidences = np.max(probas, axis=1)
+        
+        ax.hist(confidences, bins=30, color=colors[idx], alpha=0.7, edgecolor='black')
+        ax.axvline(np.mean(confidences), color='red', linestyle='--', linewidth=2, 
+                  label=f'Mean: {np.mean(confidences):.3f}')
+        ax.set_xlabel('Confidence', fontsize=11, fontweight='bold')
+        ax.set_ylabel('Frequency', fontsize=11, fontweight='bold')
+        ax.set_title(f'{label}', fontsize=13, fontweight='bold')
+        ax.legend(fontsize=10)
+        ax.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('visualizations/confidence_distribution.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info("✅ Saved: confidence_distribution.png")
+    
+    # 5. Training Time Comparison
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    training_times = [models[m]['training_time'] for m in model_order]
+    bars = ax.barh(model_labels, training_times, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
+    ax.set_xlabel('Training Time (seconds)', fontsize=12, fontweight='bold')
+    ax.set_title('Training Time Comparison', fontsize=16, fontweight='bold')
+    ax.grid(axis='x', alpha=0.3)
+    
+    for bar, time in zip(bars, training_times):
+        ax.text(time + 1, bar.get_y() + bar.get_height()/2, f'{time:.1f}s', 
+               va='center', fontweight='bold', fontsize=11)
+    
+    plt.tight_layout()
+    plt.savefig('visualizations/training_time_comparison.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    logger.info("✅ Saved: training_time_comparison.png")
+    
+    logger.info("📊 All model comparison visualizations saved to 'visualizations/' directory")
+
+
 def create_improved_visualizations(y_true: np.ndarray, y_pred: np.ndarray, 
                                  feature_importance: Optional[np.ndarray] = None,
                                  feature_names: Optional[List[str]] = None,
                                  class_names: List[str] = ['Christian', 'Secular']):
-    """Create improved visualization plots."""
+    """Create improved visualization plots for a single model."""
     
     os.makedirs('visualizations', exist_ok=True)
     
@@ -506,11 +691,11 @@ def create_improved_visualizations(y_true: np.ndarray, y_pred: np.ndarray,
     sns.heatmap(cm, annot=labels, fmt='', cmap='Blues', 
                 xticklabels=class_names, yticklabels=class_names,
                 cbar_kws={'label': 'Count'})
-    plt.title('Improved Audio Classifier - Confusion Matrix')
-    plt.ylabel('True Label')
-    plt.xlabel('Predicted Label')
+    plt.title('Best Model - Confusion Matrix', fontsize=16, fontweight='bold')
+    plt.ylabel('True Label', fontsize=12)
+    plt.xlabel('Predicted Label', fontsize=12)
     plt.tight_layout()
-    plt.savefig('visualizations/improved_confusion_matrix.png', dpi=300, bbox_inches='tight')
+    plt.savefig('visualizations/best_model_confusion_matrix.png', dpi=300, bbox_inches='tight')
     plt.close()
     
     # 2. Feature Importance
@@ -521,15 +706,16 @@ def create_improved_visualizations(y_true: np.ndarray, y_pred: np.ndarray,
         top_importance = feature_importance[top_indices]
         
         colors = plt.cm.viridis(np.linspace(0, 1, len(top_features)))
-        plt.barh(range(len(top_features)), top_importance, color=colors)
-        plt.yticks(range(len(top_features)), top_features)
-        plt.xlabel('Feature Importance')
-        plt.title('Top 25 Most Important Audio Features (Improved Model)')
+        plt.barh(range(len(top_features)), top_importance, color=colors, edgecolor='black', linewidth=0.5)
+        plt.yticks(range(len(top_features)), top_features, fontsize=10)
+        plt.xlabel('Feature Importance', fontsize=12, fontweight='bold')
+        plt.title('Top 25 Most Important Audio Features', fontsize=16, fontweight='bold')
+        plt.grid(axis='x', alpha=0.3)
         plt.tight_layout()
-        plt.savefig('visualizations/improved_feature_importance.png', dpi=300, bbox_inches='tight')
+        plt.savefig('visualizations/feature_importance.png', dpi=300, bbox_inches='tight')
         plt.close()
     
-    logger.info("📊 Improved visualizations saved to 'visualizations/' directory")
+    logger.info("📊 Single model visualizations saved to 'visualizations/' directory")
 
 def main():
     """Main improved training function."""
@@ -673,8 +859,16 @@ def main():
     if hasattr(best_model.model, 'feature_importances_'):
         feature_importance = best_model.model.feature_importances_
     
-    # Create improved visualizations
-    print("\n📊 Creating improved visualizations...")
+    # Create comprehensive visualizations
+    print("\n📊 Creating comprehensive visualizations...")
+    print("=" * 60)
+    
+    # Model comparison visualizations
+    print("🎨 Generating model comparison charts...")
+    create_model_comparison_visualizations(models, y_test, class_names)
+    
+    # Best model specific visualizations
+    print("🎨 Generating best model visualizations...")
     create_improved_visualizations(y_test, y_pred_best, feature_importance, 
                                  best_model.selected_feature_names, class_names)
     

@@ -173,15 +173,18 @@ The classifier analyzes these audio characteristics:
 
 ## Model Performance
 
-### Improved Model (v2.0)
-- **Coverage**: 100% of audio files (no failed extractions)
-- **Test Accuracy**: 84.1% (balanced across classes)
-- **Cross-Validation**: 81.8% ± 4.0% (reliable estimate)
-- **Christian Detection**: 86% precision, 92% recall
-- **Secular Detection**: 78% precision, 66% recall
+### Improved Model (v3.0 - Current)
+- **Test Accuracy**: 92.2% (Random Forest) - Best overall
+- **Balanced Accuracy**: 92.0% (excellent class balance)
+- **Christian Detection**: 93.0% accuracy
+- **Secular Detection**: 91.0% accuracy
+- **Class Balance Gap**: Only 2.0% (dramatically improved!)
+- **Cross-Validation**: 85.0% ± 3.5% (reliable estimate)
 - **Features**: 30 carefully selected from 65 extracted
-- **Class Balancing**: ✅ Handles 2.32:1 data imbalance
+- **Models**: 3 models trained (Random Forest, SVM, Ensemble)
+- **Techniques**: SMOTE-Tomek resampling + tuned hyperparameters
 - **Speed**: ~4.9 files/second with parallel processing
+- **Coverage**: 100% of audio files (no failed extractions)
 - **Offline**: No internet connection required
 
 ### Key Improvements Over Original
@@ -192,6 +195,76 @@ The classifier analyzes these audio characteristics:
 - ✅ Cross-validation for reliable performance estimates
 - ✅ Enhanced audio feature engineering
 - ✅ Proper bias mitigation techniques
+- ✅ SMOTE-Tomek resampling for better minority class learning
+- ✅ Tuned hyperparameters to prevent majority class overfitting
+
+## 📊 Visualizations
+
+The training process generates comprehensive visualizations to analyze model performance:
+
+### 1. Model Performance Comparison
+![Model Comparison Metrics](visualizations/model_comparison_metrics.png)
+
+**Shows**: Side-by-side comparison of all 3 models (Random Forest, SVM, Ensemble) across 4 key metrics:
+- Test Accuracy: Overall classification accuracy
+- Balanced Accuracy: Fair metric accounting for class imbalance
+- F1 Score: Harmonic mean of precision and recall
+- Cross-Validation Accuracy: Reliability estimate with error bars
+
+**Key Insights**:
+- Random Forest achieves highest accuracy (92.2%)
+- All models show consistent performance (90-92% range)
+- Low CV standard deviation indicates stable, reliable models
+
+### 2. Per-Class Performance Analysis
+![Per-Class Comparison](visualizations/per_class_comparison.png)
+
+**Shows**: Christian vs Secular accuracy for each model with balance gap annotations
+
+**Key Insights**:
+- Random Forest: 93.0% Christian, 91.0% Secular (2.0% gap) ✅
+- Excellent class balance achieved through SMOTE-Tomek
+- Previous version had 16.5% gap - now reduced by 87%!
+
+### 3. Confusion Matrices - All Models
+![Confusion Matrices](visualizations/confusion_matrices_all.png)
+
+**Shows**: Detailed breakdown of predictions vs actual labels for all models
+
+**Key Insights**:
+- Visual representation of true positives, false positives, etc.
+- Random Forest shows minimal misclassification
+- All models have high diagonal values (correct predictions)
+
+### 4. Prediction Confidence Distribution
+![Confidence Distribution](visualizations/confidence_distribution.png)
+
+**Shows**: Histogram of model confidence scores for predictions
+
+**Key Insights**:
+- SVM shows highest average confidence (0.868)
+- Most predictions are high-confidence (>0.7)
+- Random Forest mean confidence: 0.802
+
+### 5. Training Time Comparison
+![Training Time](visualizations/training_time_comparison.png)
+
+**Shows**: Time taken to train each model
+
+**Key Insights**:
+- SVM trains fastest
+- Random Forest training time reasonable despite complexity
+- Ensemble takes longest (combines RF + SVM)
+
+### 6. Feature Importance Analysis
+![Feature Importance](visualizations/feature_importance.png)
+
+**Shows**: Top 25 most important audio features for classification
+
+**Key Insights**:
+- Spectral features (MFCC, chroma) most discriminative
+- Harmonic and rhythmic patterns distinguish Christian music
+- Multiple feature types contribute (no single dominant feature)
 
 ## Advantages Over Lyrics-Based Classification
 
